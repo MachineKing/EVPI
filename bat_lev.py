@@ -9,7 +9,7 @@ white = (255,255,255)
 black = (0,0,0)
 pink = (255,200,200)
 
-bat_levels = [10, 2, 9, 7, 6, 6, 7, 8, 9, 3, 4, 6, 2, 7, 8, 6, 5, 4, 9, 1, 2, 7, 8, 9, 9, 9, 8, 7, 7,8,9,5,6,7,8,4,6,7,5,8,]
+bat_levels = [1]*40
 bat_cell_height = 10
 
 
@@ -46,19 +46,40 @@ def init():
 	pygame.display.set_caption('Battery Level indicator')
 
 	return bat_dis, bms_ser
+	
+def read_bat(line, pack):
+	f10 = line.split(' ')
+	if(pack ==1):
+		for x in range(0, 10):
+			bat_levels[x] = float(f10[x])
+			bat_levels[x] = int(((bat_levels[x]-2.8)/1.1)*10)
+	print type(bat_levels)
+	print bat_levels
+	
+	return
 
 def main():	
 	display, ser = init()
-	for x in range(0, 40):
-		battery_cell(bat_levels[x], x*12 , 10, display)
-	pygame.display.update()
+
 	while 1:
 		while ser.inWaiting() !=0:
-			print ser.readline()
+			in_serial = ser.readline()
+			if(in_serial == "cell voltages = \r\n"):
+				print in_serial
+				in_serial = ser.readline()
+				read_bat(in_serial, 1)
+				for x in range(0, len(bat_levels)):
+					battery_cell(bat_levels[x], x*12 , 10, display)
+				pygame.display.update()
+				
+
+
 		for event in pygame.event.get():
 			if event.type == pygame.KEYDOWN:
 				if event.key == pygame.K_q:
 					print 'stop'
 					pygame.quit()
 					sys.exit()
+				if event.key == pygame.K_r:
+					pygame.display.update()
 main()
