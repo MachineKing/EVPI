@@ -11,6 +11,7 @@ pink = (255,200,200)
 
 bat_levels = [1]*40
 bat_cell_height = 10
+bat_pack_height = 1
 
 
 
@@ -18,6 +19,12 @@ def draw_square(square_size,locX,locY, win):
 	pygame.draw.rect(win, red, (locX,locY,square_size,square_size), 2)
 	pygame.display.update()
 	return
+	
+def stack_current(win, current, stack):
+	print current
+	pygame.draw.rect(win, white, (0,152,32,104), 1)	
+	for L in range(0, int(current*10)):
+		pygame.draw.rect(win, blue, (1,250-int(L*bat_pack_height),30,1), 1)		
 	
 def battery_cell(level, locX, locY, win):
 	if level < 5:
@@ -51,17 +58,18 @@ def read_bat(line, pack):
 	f10 = line.split(' ')
 	if(pack ==1):
 		for x in range(0, 10):
-			bat_levels[x] = float(f10[x])
-			bat_levels[x] = int(((bat_levels[x]-2.8)/1.1)*10)
-	print type(bat_levels)
-	print bat_levels
-	
+			try:
+				bat_levels[x] = float(f10[x])
+				bat_levels[x] = int(((bat_levels[x]-2.8)/1.1)*10)
+			except:
+				bat_levels[x]=0
 	return
 
 def main():	
 	display, ser = init()
 
 	while 1:
+		display.fill(black)
 		while ser.inWaiting() !=0:
 			in_serial = ser.readline()
 			if(in_serial == "cell voltages = \r\n"):
@@ -71,6 +79,11 @@ def main():
 				for x in range(0, len(bat_levels)):
 					battery_cell(bat_levels[x], x*12 , 10, display)
 				pygame.display.update()
+			if(in_serial == "Pack Current = \r\n"):
+				pack_current = float(ser.readline())
+				stack_current(display, pack_current, 1)
+				pygame.display.update()
+				
 				
 
 
