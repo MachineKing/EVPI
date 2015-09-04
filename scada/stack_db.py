@@ -4,10 +4,7 @@
 import sqlite3 as sql
 import os, sys, time, datetime
 stackA = "stack_one"
-stackB = "stack_two"
-stackC = "stack_three"
-stackD = "stack_four"
-power = "power_data"
+power = "raw_power"
 sense = "sensors"
 db_name = "pack.db"
 cell_value =[3.5, 3.6, 3.9, 4.0, 3.88]*2
@@ -20,11 +17,11 @@ def create_table(db_name, table_name):
 		with db_con:
 			cur = db_con.cursor()
 			cur.execute("DROP TABLE IF EXISTS {0}".format(table_name))
-			if(table_name=="power_data"):
-				cur.execute("CREATE TABLE IF NOT EXISTS raw_power(v_before_bms REAL, i_before_bms REAL, v_after_bms REAL, i_after_bms REAL, v_motor_phase_a REAL, i_motor_phase_a REAL, time TEXT)")
+			if(table_name=="raw_power"):
+				cur.execute("CREATE TABLE IF NOT EXISTS {0}(v_before_bms REAL, i_before_bms REAL, time1 TEXT, v_after_bms REAL, i_after_bms REAL, time2 TEXT, v_motor_phase_a REAL, i_motor_phase_a REAL, time3 TEXT)".format(table_name))
 			elif(table_name=="sensors"):
-				cur.execute("CREATE TABLE IF NOT EXISTS sensors(motor_temp REAL, controller_temp REAL, spare_temp REAL, motor_speed REAL, axle_speed REAL, spare_speed REAL, time TEXT)")
-			else:
+				cur.execute("CREATE TABLE IF NOT EXISTS {0}(motor_temp REAL, controller_temp REAL, spare_temp REAL, motor_speed REAL, axle_speed REAL, spare_speed REAL, time TEXT)".format(table_name))
+			elif(table_name=="stack_one"):
 				cur.execute("CREATE TABLE IF NOT EXISTS {0}(cell_1 REAL, cell_2 REAL, cell_3 REAL,cell_4 REAL, cell_5 REAL, cell_6 REAL, cell_7 REAL, cell_8 REAL, cell_9 REAL, cell_10 REAL,  current INT, time TEXT)".format(table_name))	
 	except sql.Error, e:
 		print "Error %s:" % e.args[0]
@@ -47,6 +44,22 @@ def pack_state(table_name, ten_v, current, status, time):
                     con.close()
 	return
 
+def raw_power(table_name, voltages, currents, time):
+	time = "\"" + str(time).rstrip("0") + "\"" # convert datetime object into a string suitable for insertion into SQLite command
+	con = None
+	try:
+		con = sql.connect("pack.db")
+		cur = con.cursor()
+		cur.execute("INSERT INTO {0} VALUES({1}, {2}, {3}, {4}, {5}, {6}, {7})".format(table_name, temperatures[0], temperatures[1], temperatures[2], rpm[0], rpm[1], rpm[2], time))
+	except sql.Error, e:
+		print "Error %s:" %e.args[0]
+		sys.exit(1)
+	finally:
+		if con:
+			con.commit()
+			con.close()
+	return	
+	
 def sensor_data(table_name, temperatures, rpm, time):
 	time = "\"" + str(time).rstrip("0") + "\"" # convert datetime object into a string suitable for insertion into SQLite command
 	con = None
@@ -74,9 +87,6 @@ def new_db():
 	except:
 		print "pack.db does not exist"
 	create_table(db_name, stackA)
-	create_table(db_name, stackB) 
-	create_table(db_name, stackC)
-	create_table(db_name, stackD)
 	create_table(db_name, power)
 	create_table(db_name, sense)
 	return  
@@ -108,11 +118,12 @@ def to_csv(table_name, db_name):
     return 
 
 
-if to_csv(stackD,"pack.db"):
-   print "SUCCESS" 
 
  
 """
+
+if to_csv(stackA,"pack.db"):
+   print "SUCCESS" 
 create_table("pack.db", stackA)
 create_table("pack.db", stackB)
 create_table("pack.db", stackC)
@@ -121,7 +132,7 @@ create_table("pack.db", stackD)
 
 pack_state(stackA, cell_value, stack_current[0], "charging", timeNow)
 pack_state(stackB, cell_value, stack_current[1], "charging", timeNow) 
-pack_state(stackC, cell_value, s  tack_current[2], "charging", timeNow) """
-pack_state(stackD, cell_value, stack_current[3], "charging", timeNow) 
+pack_state(stackC, cell_value, s  tack_current[2], "charging", timeNow) 
+pack_state(stackD, cell_value, stack_current[3], "charging", timeNow) """
 
  

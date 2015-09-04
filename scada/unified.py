@@ -1,6 +1,7 @@
 import pygame, sys, time, serial, datetime, math
 from pygame.locals import *
-import stack_db as db
+import pandas as pd
+import sqlite3 as sql
 
 
 
@@ -27,11 +28,29 @@ bat_cell_height = 10
 bat_pack_height = 1
 temp_v=[0]
 temp_i=[0]
+bat_voltage_roll=[]
+# database seeds for creation of new tables
+iBat = [0.1]
+vBat = [0.1]
+iCont = [0.1]
+vCont = [0.1]
+iMot = [0.1]
+vMot = [0.1]
 
-stackA = "stack_one"
-stackB = "stack_two"
-stackC = "stack_three"
-stackD = "stack_four"
+tBat=[unicode(datetime.datetime.now())]
+tMot=[unicode(datetime.datetime.now())]
+tCont=[unicode(datetime.datetime.now())]
+
+tempBat=[25.0]
+tempBms=[25.0]
+tempMot=[25.0]
+rpmMot=[0.1]
+tSense=[unicode(datetime.datetime.now())]
+cell1, cell2, cell3, cell4, cell5, cell6, cell7, cell8, cell9, cell10 =[0], [0], [0], [0], [0], [0], [0], [0], [0], [0]
+
+EvData = zip(iBat, vBat, tBat, iCont, vCont, tCont, iMot, vMot, tMot, tempBat, tempBms, rpmMot, tSense)
+BatData = zip(iBat, vBat, tBat, cell1, cell2, cell3, cell4, cell5, cell6, cell7, cell8, cell9, cell10)
+
 
 # ###################################################################################################################################	
 # ###################################################################################################################################		
@@ -58,13 +77,6 @@ except:
 	
 font = pygame.font.SysFont("arial", 20)
 
-
-# ###################################################################################################################################	
-# ###################################################################################################################################	
-def draw_square(square_size,locX,locY):
-	pygame.draw.rect(display, red, (locX,locY,square_size,square_size), 2)
-	pygame.display.update()
-	return
 # ###################################################################################################################################	
 # ###################################################################################################################################	
 def setup_frames():
@@ -114,12 +126,16 @@ def read_bat(line, pack):
 # ###################################################################################################################################	
 #display sensor values
 # ###################################################################################################################################	
-def sense_display(speed, temps):
+def display_speed(speed):
 	text = font.render(str(speed[0]), True, white)
 	display.blit(text,(250, 300))
+	return
+def display_temp(temps):
 	text = font.render(str(temps[0]), True, white)
 	display.blit(text,(250, 250))
-	return
+	return	
+
+
 # ###################################################################################################################################	
 # ###################################################################################################################################	
 def rms_volt(voltage):
@@ -191,95 +207,160 @@ def rms_amp(current):
 	del current_wave[:]	
 	
 	return
+# ###################################################################################################################################	
+#Battery voltage calculator
+# ###################################################################################################################################
+def bat_volts(in_serial, sense_ser):
+	bat_voltage_sum=0
+	voltage=0
+	roll_avg=0
+	volt_div=243.03
+	iso_amp_gain=4.04
+	amp_gain=3
 	
+	print "motor voltage"
+	while(in_serial != "end\n"):
+		if(sense_ser.inWaiting() !=0):
+			in_serial = sense_ser.readline()
+			if(in_serial!="end\n"):
+				temp_v.append(in_serial)
+	sense_ser.write("a")
+		
+	for element in temp_v:
+		voltage += (((float(element)*5/4096)/amp_gain)/iso_amp_gain)*volt_div
+	mean_voltage=voltage/len(temp_v)
+	#keep a rolling average of battery voltage
+	bat_voltage_roll.append(mean_voltage)
+	if(len(bat_voltage_roll)>10):
+		del bat_voltage_roll[0]
+	for element in bat_voltage_roll:
+		bat_voltage_sum+=element
+	roll_avg = bat_voltage_sum/len(bat_voltage_roll)
+	bat_voltage_sum=0
+	text = font.render(str(roll_avg), True, white)
+	display.blit(text,(100, 300))
+	del temp_v[:]
+	print roll_avg
+	return roll_avg	 
+
+def bat_amps(in_serial, sense_ser):
+	voltage=0
+	iso_amp_gain=4.04
+	amp_gain=3
+	print "battery current"
+	while(in_serial != "end\n"):
+		if(sense_ser.inWaiting() !=0):
+			in_serial = sense_ser.readline()
+			if(in_serial!="end\n"):
+				temp_i.append(in_serial)
+	
+	for element in temp_i:
+		voltage += (((float(element)*5/4096)/amp_gain)/iso_amp_gain)/0.005
+	mean_voltage=voltage/len(temp_i)
+	print mean_voltage
+	text = font.render(str(mean_voltage), True, white)
+	display.blit(text,(100, 150))
+	del temp_i[:]
+	return mean_voltage
+# ###################################################################################################################################	
+#Write All Data to database
+# ###################################################################################################################################
+def build_frames():
+	EvData = zip(iBat, vBat, tBat, iCont, vCont, tCont, iMot, vMot, tMot, tempBat, tempBms, rpmMot, tSense)
+	BatData = zip(iBat, vBat, tBat, cell1, cell2, cell3, cell4, cell5, cell6, cell7, cell8, cell9, cell10)
+	evFrame=pd.DataFrame(data = EvData, columns = ['iBat', 'vBat', 'tBat', 'iCont', 'vCont', 'tCont', 'iMot', 'vMot', 'tMot', 'tempBat', 'tempBms', 'rpmMot', 'tSense'])
+	batFrame=pd.DataFrame(data = BatData, columns = ['iBat', 'vBat', 'tBat', 'cell1', 'cell2', 'cell3', 'cell4', 'cell5', 'cell6', 'cell7', 'cell8', 'cell9', 'cell10'])
+	return evFrame, batFrame
+	
+def to_db(operation, evFrame, batFrame): #operation = 'fail', 'replace', 'append'
+	con = None
+	try:
+		con = sql.connect("pack.db")
+		cur = con.cursor()
+	except sql.Error, e:
+		print "Error %s:" %e.args[0]
+	evFrame.to_sql('EV', con, flavor='sqlite', schema=None, if_exists=operation, index=True, index_label=None, chunksize=None, dtype=None)
+	batFrame.to_sql('BAT', con, flavor='sqlite', schema=None, if_exists=operation, index=True, index_label=None, chunksize=None, dtype=None)
+	return
 # ###################################################################################################################################	
 # ###################################################################################################################################	
 # 	                                            MAIN LOOP
 # ###################################################################################################################################	
 # ###################################################################################################################################	
-def main():	
-	status_bits = 0
-	while 1:
-		display.fill(black)
-		try:
-			while bms_ser.inWaiting() !=0:
-				in_serial = bms_ser.readline()
-				if(in_serial == "cell voltages = \r\n"):
-					in_serial = bms_ser.readline()# get stack voltages
-					
-					read_bat(in_serial, 1) #process the battery cell value readings place them in bat_levels variable
-					for x in range(0, len(bat_levels)): 		# create a column for each cell
-						battery_cell(bat_levels[x], cell_value[x], x*12 , 20) #pass the cell you want to render and its value.
-					pygame.display.update()
-				elif(in_serial == "status bits = \r\n"):
-					status_bits = bms_ser.readline()
-					
-					pygame.display.update()
-				elif(in_serial == "Pack Current = \r\n"):
-					pack_current = float(bms_ser.readline()) # get stack current
-					
-					stack_current(pack_current, 1)# display current as a bar
-					pygame.display.update()
-					 
-					db.pack_state(stackA, cell_value, pack_current, status_bits, datetime.datetime.now())# write cell voltages, stack current, and status to database
-		except:
-			pass #if bms not plugged in do nothing
-		#try:		
-		while sense_ser.inWaiting() !=0:
-			in_serial=sense_ser.readline()
-			if(in_serial=="temperatures = \r\n"):
-				in_serial = sense_ser.readline() # get temperatures 
-				temp = in_serial.split() #split on whitespace
-				print temp
-			elif(in_serial == "rpm = \r\n"):
-				in_serial = sense_ser.readline() # get hall effect speeds 
-				rpm = in_serial.split()
-				print rpm
-				sense_display(rpm, temp)
-				pygame.display.update()
-				db.sensor_data("sensors", temp, rpm, str(datetime.datetime.now()))
-			elif(in_serial == "motor voltage = \n"):
-				print "motor voltage"
-				while(in_serial != "end\n"):
-					if(sense_ser.inWaiting() !=0):
-						in_serial = sense_ser.readline()
-						if(in_serial!="end\n"):
-							temp_v.append(in_serial)
-				print len(temp_v)
-				rms_volt(temp_v)
-				sense_ser.write("a")
-				del temp_v[:]
-			elif(in_serial == "motor current = \n"):
-				print "motor current"
-				while(in_serial != "end\n"):
-					if(sense_ser.inWaiting() !=0):
-						in_serial = sense_ser.readline()
-						if(in_serial!="end\n"):
-							temp_i.append(in_serial)
-				print len(temp_i)
-				rms_amp(temp_i)
-				
-				del temp_i[:]
-			elif(in_serial == "battery current = \r\n"):
-				while(in_serial != "end\r\n"):
-					if(sense_ser.inWaiting() !=0):
-						in_serial = sense_ser.readline()
-						if(in_serial!="end\r\n"):
-							temp_i.append(in_serial)
-					
-		#except:
-			#pass
-				
-		
 
-		for event in pygame.event.get():
-			if event.type == pygame.KEYDOWN:
-				if event.key == pygame.K_q:
-					print 'stop'
-					pygame.quit()
-					sys.exit()
-				if event.key == pygame.K_r:
-					pygame.display.update()
+status_bits = 0
+evFrame, batFrame=build_frames()
+to_db('replace',evFrame, batFrame)
+while 1:
+	display.fill(black)
+	pygame.display.update()
+	evFrame, batFrame=build_frames()
+	to_db('append',evFrame, batFrame)
+	try:
+		while bms_ser.inWaiting() !=0:
+			in_serial = bms_ser.readline()
+			if(in_serial == "cell voltages = \r\n"):
+				in_serial = bms_ser.readline()# get stack voltages
+				
+				read_bat(in_serial, 1) #process the battery cell value readings place them in bat_levels variable
+				for x in range(0, len(bat_levels)): 		# create a column for each cell
+					battery_cell(bat_levels[x], cell_value[x], x*12 , 20) #pass the cell you want to render and its value.
+				 
+			elif(in_serial == "status bits = \r\n"):
+				status_bits = bms_ser.readline()
+				
+				 
+			elif(in_serial == "Pack Current = \r\n"):
+				pack_current = float(bms_ser.readline()) # get stack current
+				
+				stack_current(pack_current, 1)# display current as a bar
+				 
+				 
+				db.pack_state(stackA, cell_value, pack_current, status_bits, datetime.datetime.now())# write cell voltages, stack current, and status to database
+	except:
+		pass #if bms not plugged in do nothing
+	#try:		
+	# ###################################################################################################################################
+	while sense_ser.inWaiting() !=0:
+		in_serial=sense_ser.readline()
+		if(in_serial=="temperatures = \r\n"):
+			in_serial = sense_ser.readline() # get temperatures 
+			temp = in_serial.split() #split on whitespace
+			display_temp(temp)
+			tempBat[0]=temp[0]
+			tempBms[0]=temp[1]
+			tempMot[0]=temp[2]
+			print temp
+		elif(in_serial == "rpm = \r\n"):
+			t = unicode(datetime.datetime.now())
+			in_serial = sense_ser.readline() # get hall effect speeds 
+			rpm = in_serial.split()
+			print rpm
+			display_speed(rpm)
+			rpmMot[0]=552.1 #float(rpm)
+			
+			tSense[0]=t
+		elif(in_serial == "battery voltage = \n"):
+			vBat[0]=bat_volts(in_serial, sense_ser)
+		elif(in_serial == "battery current = \n"):
+			t = unicode(datetime.datetime.now())
+			iBat[0]=bat_amps(in_serial, sense_ser)
+			
+			tBat[0]=t
+# ###################################################################################################################################					
+	#except:
+		#pass
+			
+	
+
+	for event in pygame.event.get():
+		if event.type == pygame.KEYDOWN:
+			if event.key == pygame.K_q:
+				print 'stop'
+				pygame.quit()
+				sys.exit()
+			if event.key == pygame.K_r:
+				pygame.display.update()
 # ###################################################################################################################################	
 # ###################################################################################################################################	
-main()
+
