@@ -11,8 +11,9 @@ import wiringpi2 as wp
 #zero crossing detection flags
 
 logged = datetime.datetime.now()
-displayed = datetime.datetime.now()
+displayed = logged
 current_time=logged
+serial_time=logged
 #display variables
 red = (255,0,0)
 green = (0,255,0)
@@ -32,6 +33,8 @@ bat_pack_height = 1
 temp_v=[0]
 temp_i=[0]
 bat_voltage_roll=[]
+mot_voltage_roll=[]
+status_bits = 0
 # database seeds for creation of new tables
 iBat = [0.1]
 vBat = [0.1]
@@ -46,12 +49,12 @@ tCont=[unicode(datetime.datetime.now())]
 
 tempBat=[25.0]
 tempBms=[25.0]
-tempMot=[25.0]
+tempCont=[25.0]
 rpmMot=[0.1]
 tSense=[unicode(datetime.datetime.now())]
 cell1, cell2, cell3, cell4, cell5, cell6, cell7, cell8, cell9, cell10 =[0], [0], [0], [0], [0], [0], [0], [0], [0], [0]
 
-EvData = zip(iBat, vBat, tBat, iCont, vCont, tCont, iMot, vMot, tMot, tempBat, tempBms, rpmMot, tSense)
+EvData = zip(iBat, vBat, tBat, iCont, vCont, tCont, iMot, vMot, tMot, tempBat, tempBms, tempCont, rpmMot, tSense)
 BatData = zip(iBat, vBat, tBat, cell1, cell2, cell3, cell4, cell5, cell6, cell7, cell8, cell9, cell10)
 
 time_log=0
@@ -71,12 +74,12 @@ wp.pullUpDnControl(rpm_log, 2)
 # ###################################################################################################################################	
 # ###################################################################################################################################		
 try:
-	bms_ser = serial.Serial('/dev/ttyACM2', 9600, timeout=0)
+	bms_ser = serial.Serial('/dev/ttyACM0', 9600, timeout=0)
 	print "BMS present"
 except:
 	print "BMS not plugged in"
 try:
-	sense_ser = serial.Serial('/dev/ttyACM0', 115200, timeout=0)
+	sense_ser = serial.Serial('/dev/ttyACM1', 115200, timeout=0)
 	print "Sensor Node present"
 except:
 	print "Sensor Node not plugged in"
@@ -134,7 +137,7 @@ def rms_volts(in_serial, sense_ser):
 				temp_v.append(in_serial)
 		
 	#convert each adc reading to a current and sum
-	for element in voltage:
+	for element in temp_v:
 	#try:
 		if 2000<=int(element)<=2100:	#zero crossing detection ensures one full period is sampled
 			if not period_flag:
@@ -151,7 +154,7 @@ def rms_volts(in_serial, sense_ser):
 		voltage_wave.append(voltage_wave[len(voltage_wave)-1])"""
 						
 	#get mean of squared values
-	voltage_mean=voltage_sum/len(voltage)
+	voltage_mean=voltage_sum/len(temp_v)
 	#get square root of mean = rms value
 	vrms=math.sqrt(voltage_mean)
 
@@ -179,7 +182,7 @@ def rms_amps(in_serial, sense_ser):
 	
 	
 	#convert each adc reading to a current and sum
-	for element in current:
+	for element in temp_i:
 	#try:
 		if 2000<=int(element)<=2100:
 			if not period_flag:
@@ -196,16 +199,50 @@ def rms_amps(in_serial, sense_ser):
 		current_wave.append(current_wave[len(current_wave)-1])"""
 			
 	#get mean of squared values
-	current_mean=current_sum/len(current)
+	current_mean=current_sum/len(temp_i)
 	#get square root of mean = rms value
 	irms=math.sqrt(current_mean)
 	#print max(current_wave)-min(current_wave)
 	del current_wave[:]	
 	del temp_i[:]
+	sense_ser.write("a") #acknowledge
 	return irms
 # ###################################################################################################################################	
 #Battery voltage calculator
 # ###################################################################################################################################
+def mot_volts(in_serial, sense_ser):
+	bat_voltage_sum=0
+	voltage=0
+	roll_avg=0
+	volt_div=243.03
+	iso_amp_gain=4.04
+	amp_gain=7
+	
+	print "battery voltage"
+	while(in_serial != "end\n"):
+		if(sense_ser.inWaiting() !=0):
+			in_serial = sense_ser.readline()
+			if(in_serial!="end\n"):
+				temp_v.append(in_serial)
+	
+	for element in temp_v:
+		voltage += (((float(element)*5/4096)/amp_gain)/iso_amp_gain)*volt_div
+	mean_voltage=voltage/len(temp_v)
+	#keep a rolling average of battery voltage
+	mot_voltage_roll.append(mean_voltage)
+	if(len(mot_voltage_roll)>2):
+		del mot_voltage_roll[0]
+	for element in mot_voltage_roll:
+		bat_voltage_sum+=element
+	roll_avg = bat_voltage_sum/len(mot_voltage_roll)
+	bat_voltage_sum=0
+	text = font.render(str(roll_avg), True, white)
+	display.blit(text,(100, 300))
+	del temp_v[:]
+	#print roll_avg
+	sense_ser.write("a") #acknowledge that voltage has been received
+	return roll_avg	 
+
 def bat_volts(in_serial, sense_ser):
 	bat_voltage_sum=0
 	voltage=0
@@ -214,7 +251,7 @@ def bat_volts(in_serial, sense_ser):
 	iso_amp_gain=4.04
 	amp_gain=3
 	
-	#print "battery voltage"
+	print "battery voltage"
 	while(in_serial != "end\n"):
 		if(sense_ser.inWaiting() !=0):
 			in_serial = sense_ser.readline()
@@ -226,7 +263,7 @@ def bat_volts(in_serial, sense_ser):
 	mean_voltage=voltage/len(temp_v)
 	#keep a rolling average of battery voltage
 	bat_voltage_roll.append(mean_voltage)
-	if(len(bat_voltage_roll)>10):
+	if(len(bat_voltage_roll)>2):
 		del bat_voltage_roll[0]
 	for element in bat_voltage_roll:
 		bat_voltage_sum+=element
@@ -243,7 +280,7 @@ def bat_amps(in_serial, sense_ser):
 	voltage=0
 	iso_amp_gain=4.04
 	amp_gain=3
-	#print "battery current"
+	print "battery current"
 	while(in_serial != "end\n"):
 		if(sense_ser.inWaiting() !=0):
 			in_serial = sense_ser.readline()
@@ -251,22 +288,23 @@ def bat_amps(in_serial, sense_ser):
 				temp_i.append(in_serial)
 	
 	for element in temp_i:
-		voltage += (((float(element)*5/4096)/amp_gain)/iso_amp_gain)/0.005
+		voltage += ((((float(element)-2040)*5/4096)/amp_gain)/iso_amp_gain)/0.005
 	mean_voltage=voltage/len(temp_i)
 	#print mean_voltage
 	text = font.render(str(mean_voltage), True, white)
 	display.blit(text,(100, 150))
 	del temp_i[:]
+	sense_ser.write("a") #acknowledge
 	return mean_voltage
 # ###################################################################################################################################	
 #Write All Data to database
 # ###################################################################################################################################
 def build_frames():
 	cell1[0], cell2[0], cell3[0], cell4[0], cell5[0], cell6[0], cell7[0], cell8[0], cell9[0], cell10[0] = cell_value[0], cell_value[1], cell_value[2], cell_value[3], cell_value[4], cell_value[5], cell_value[6], cell_value[7], cell_value[8], cell_value[9]
- 	EvData = zip(iBat, vBat, tBat, iCont, vCont, tCont, iMot, vMot, tMot, tempBat, tempBms, rpmMot, tSense)
+ 	EvData = zip(iBat, vBat, tBat, iCont, vCont, tCont, iMot, vMot, tMot, tempBat, tempBms, tempCont, rpmMot, tSense)
 	BatData = zip(iBat, vBat, tBat, cell1, cell2, cell3, cell4, cell5, cell6, cell7, cell8, cell9, cell10)
 	#build data frames using pandas
-	evFrame=pd.DataFrame(data = EvData, columns = ['iBat', 'vBat', 'tBat', 'iCont', 'vCont', 'tCont', 'iMot', 'vMot', 'tMot', 'tempBat', 'tempBms', 'rpmMot', 'tSense'])
+	evFrame=pd.DataFrame(data = EvData, columns = ['iBat', 'vBat', 'tBat', 'iCont', 'vCont', 'tCont', 'iMot', 'vMot', 'tMot', 'tempBat', 'tempBms', 'tempCont', 'rpmMot', 'tSense'])
 	batFrame=pd.DataFrame(data = BatData, columns = ['iBat', 'vBat', 'tBat', 'cell1', 'cell2', 'cell3', 'cell4', 'cell5', 'cell6', 'cell7', 'cell8', 'cell9', 'cell10'])
 	return evFrame, batFrame
 	
@@ -289,7 +327,7 @@ def new_db():
 	print dir_t
 	os.system("cd /home/pi/EVPI")
 	try:
-		os.system("sudo cp /home/pi/unified/pack.db /home/pi/EVPI/db_backup/{0}.db".format(dir_t[2:17]))
+		os.system("sudo cp /home/pi/EVPI/scada/pack.db /home/pi/EVPI/db_backup/{0}.db".format(dir_t[2:17]))
 	except:
 		print "pack.db does not exist"
 	evFrame, batFrame=build_frames()
@@ -298,8 +336,6 @@ def new_db():
 # ###################################################################################################################################	
 #Display Functionality
 # ###################################################################################################################################
-# ###################################################################################################################################	
-# ###################################################################################################################################	
 def update_display(display, evFrame, batFrame):
 	display.fill(black)
 	for x in range(0, 40):
@@ -318,6 +354,8 @@ def update_display(display, evFrame, batFrame):
 	display.blit(text,(10, 60))
 	text = font.render(str(evFrame.tempBms[0]), True, white)
 	display.blit(text,(100, 60))
+	text = font.render(str(evFrame.tempCont[0]), True, white)
+	display.blit(text,(200, 60))
 	
 	pygame.draw.rect(display, blue, pygame.Rect(310, 30, 100, 60), 8)
 	text = font.render("RPM", True, white)
@@ -326,14 +364,28 @@ def update_display(display, evFrame, batFrame):
 	text = font.render(str(evFrame.rpmMot[0]), True, white)
 	display.blit(text,(320, 40))
 	
-	pygame.draw.rect(display, blue, pygame.Rect(8, 150, 484, 54), 8)
-	pygame.draw.rect(display, red, pygame.Rect(0, 142, 500, 70), 8)
+	pygame.draw.rect(display, blue, pygame.Rect(8, 150, 484, 104), 8)
+	pygame.draw.rect(display, red, pygame.Rect(0, 142, 500, 120), 8)
 	text = font.render("POWER LEVELS", True, white)
 	display.blit(text,(150, 105))
-	#speeds
-	text = font.render(str(evFrame.vBat[0]), True, white)
+	text = font.render(str(evFrame.vBat[0])[:4], True, white)
 	display.blit(text,(20, 170))
+	text = font.render("V", True, white)
+	display.blit(text,(60, 170))
+	text = font.render(str(evFrame.iBat[0])[:4], True, white)
+	display.blit(text,(20, 200))
+	text = font.render("A", True, white)
+	display.blit(text,(60, 200))
+	text = font.render(str(evFrame.vMot[0])[:4], True, white)
+	display.blit(text,(250, 170))
+	text = font.render("V", True, white)
+	display.blit(text,(290, 170))
+	text = font.render(str(evFrame.iMot[0])[:4], True, white)
+	display.blit(text,(250, 200))
+	text = font.render("A", True, white)
+	display.blit(text,(290, 200))
 	
+	#speeds
 	#render pack voltage levels
 	for x in range(0, 10): 		# create a column for each cell
 		battery_cell(bat_levels[x], cell_value[x], x*30 , 50) #pass the cell you want to render and its value.	
@@ -351,7 +403,7 @@ def battery_cell(level, cell_val, locX, locY):
 	else:
 		color = green
 	for L in range(0, level):
-		pygame.draw.rect(display, color, (locX+50,50+500-locY-L*30,bat_cell_height,bat_cell_height), 1)
+		pygame.draw.rect(display, color, (locX+100,100+500-locY-L*30,bat_cell_height,bat_cell_height), 1)
 	
 	temp_text = str(cell_val)
 	if len(temp_text)>3:
@@ -360,12 +412,18 @@ def battery_cell(level, cell_val, locX, locY):
 	display.blit(text,(locX // 1, 520-locY - text.get_height() // 1))
 	return
 # ###################################################################################################################################	
+#Serial port functionality
+# ###################################################################################################################################
+
+	
+
+
+# ###################################################################################################################################	
 # ###################################################################################################################################	
 # 	                                            MAIN LOOP
 # ###################################################################################################################################	
 # ###################################################################################################################################	
 
-status_bits = 0
 while 1:
 	current_time = datetime.datetime.now()
 	if current_time-displayed>datetime.timedelta(seconds=1): #log data every 20 seconds in this mode
@@ -380,6 +438,7 @@ while 1:
 		if current_time-logged>datetime.timedelta(seconds=10): #log data every 20 seconds in this mode
 			evFrame, batFrame=build_frames()
 			to_db('append',evFrame, batFrame)
+			sense_ser.flushInput()
 			print "TIME LOG"
 			logged=datetime.datetime.now()
 			
@@ -408,12 +467,14 @@ while 1:
 	while sense_ser.inWaiting() !=0:
 		in_serial=sense_ser.readline()
 		if(in_serial=="temperatures = \r\n"):
+			print "TEMPERATURES"
 			in_serial = sense_ser.readline() # get temperatures 
 			temp = in_serial.split() #split on whitespace
 			try:
 				tempBat[0]=temp[0]
 				tempBms[0]=temp[1]
-				tempMot[0]=temp[2]
+				tempCont[0]=temp[2]
+				print tempBat[0], tempBms[0], tempCont[0]
 			except:
 				pass #if temperature error skip this recording
 			#print temp
@@ -432,7 +493,10 @@ while 1:
 			iBat[0]=bat_amps(in_serial, sense_ser)
 		elif(in_serial == "motor voltage = \n"):
 			t = unicode(datetime.datetime.now())
-			vMot[0]=rms_volts(in_serial, sense_ser)
+			# ###################################################################################################################################
+			#TESTING COMMENTS FOOLLLOW
+			# ###################################################################################################################################
+			vMot[0]=mot_volts(in_serial, sense_ser)#rms_volts(in_serial, sense_ser)
 			tMot[0]=t
 		elif(in_serial == "motor current = \n"):
 			iMot[0]=rms_amps(in_serial, sense_ser)
