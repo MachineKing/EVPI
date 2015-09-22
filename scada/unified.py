@@ -26,9 +26,9 @@ pink = (255,200,200)
 #database variables
 rpm = [0]*3 #rpm 0 is motor rpm 1 is axle
 temp = [0]*3 #temp 0 is motor temp 1 is controller temp 2 is battery
-bat_levels = [1]*40
-cell_value = [2.0]*10 #lists 40 elements long initialized with value [#]
-bat_cell_height = 20
+bat_levels = [10, 9, 8, 9, 7, 9, 6, 4, 9, 8]
+cell_value = [4.0, 3.9, 3.8, 3.9, 3.7, 3.9, 3.6, 3.4, 3.9, 3.6, ] #lists 40 elements long initialized with value [#]
+bat_cell_height = 10
 bat_pack_height = 1
 temp_v=[0]
 temp_i=[0]
@@ -74,12 +74,12 @@ wp.pullUpDnControl(rpm_log, 2)
 # ###################################################################################################################################	
 # ###################################################################################################################################		
 try:
-	bms_ser = serial.Serial('/dev/ttyACM0', 9600, timeout=0)
+	bms_ser = serial.Serial('/dev/ttyACM1', 9600, timeout=0)
 	print "BMS present"
 except:
 	print "BMS not plugged in"
 try:
-	sense_ser = serial.Serial('/dev/ttyACM1', 115200, timeout=0)
+	sense_ser = serial.Serial('/dev/ttyACM0', 115200, timeout=0)
 	print "Sensor Node present"
 except:
 	print "Sensor Node not plugged in"
@@ -113,7 +113,7 @@ def read_bat(line, pack):
 		for x in range(0, 10):
 			try:
 				cell_value[x] = float(f10[x])
-				bat_levels[x] = int(((cell_value[x]-3))*10) #translate 2-4V to a range of 0-10 (2V = empty)
+				bat_levels[x] = int(((cell_value[x]-3))*10) #translate 3-4V to a range of 0-10 (3V = empty)
 			except:
 				bat_levels[x]=0
 	return
@@ -218,7 +218,7 @@ def mot_volts(in_serial, sense_ser):
 	iso_amp_gain=4.04
 	amp_gain=7
 	
-	print "battery voltage"
+	print "bms voltage"
 	while(in_serial != "end\n"):
 		if(sense_ser.inWaiting() !=0):
 			in_serial = sense_ser.readline()
@@ -338,11 +338,18 @@ def new_db():
 # ###################################################################################################################################
 def update_display(display, evFrame, batFrame):
 	display.fill(black)
-	for x in range(0, 40):
-		pygame.draw.rect(display, white, (x*12,500-0,bat_cell_height*10,11), 1)
+	pygame.draw.rect(display, blue, pygame.Rect(418, 30, 74, 60), 8)
+	pygame.draw.rect(display, darkBlue, pygame.Rect(130, 200, 100, 50), 8)
+	pygame.draw.rect(display, darkBlue, pygame.Rect(130, 150, 100, 50), 8)
+	pygame.draw.rect(display, darkBlue, pygame.Rect(392, 200, 100, 50), 8)
+	pygame.draw.rect(display, darkBlue, pygame.Rect(392, 150, 100, 50), 8)
+	pygame.draw.rect(display, blue, pygame.Rect(8, 150, 484, 104), 8)
+	pygame.draw.rect(display, red, pygame.Rect(0, 142, 500, 120), 8)
+	pygame.draw.rect(display, blue, pygame.Rect(310, 30, 100, 60), 8)
 	pygame.draw.rect(display, red, pygame.Rect(0, 30, 300, 60), 8)
-	text = font.render("Temperatures", True, white)
-	display.blit(text,(0, 0))
+	
+	text = font.render("TEMPERATURES (celsius)", True, white)
+	display.blit(text,(30, 0))
 	text = font.render("Battery", True, white)
 	display.blit(text,(10, 40))
 	text = font.render("BMS", True, white)
@@ -357,38 +364,43 @@ def update_display(display, evFrame, batFrame):
 	text = font.render(str(evFrame.tempCont[0]), True, white)
 	display.blit(text,(200, 60))
 	
-	pygame.draw.rect(display, blue, pygame.Rect(310, 30, 100, 60), 8)
+
 	text = font.render("RPM", True, white)
 	display.blit(text,(320, 0))
 	#speeds
 	text = font.render(str(evFrame.rpmMot[0]), True, white)
 	display.blit(text,(320, 40))
+
 	
-	pygame.draw.rect(display, blue, pygame.Rect(8, 150, 484, 104), 8)
-	pygame.draw.rect(display, red, pygame.Rect(0, 142, 500, 120), 8)
+
 	text = font.render("POWER LEVELS", True, white)
 	display.blit(text,(150, 105))
-	text = font.render(str(evFrame.vBat[0])[:4], True, white)
-	display.blit(text,(20, 170))
-	text = font.render("V", True, white)
-	display.blit(text,(60, 170))
-	text = font.render(str(evFrame.iBat[0])[:4], True, white)
+	text = font.render("Raw Battery", True, white)
+	display.blit(text,(20, 160))
+	text = font.render("System Output", True, white)
+	display.blit(text,(250, 160))
+	text = font.render(str(evFrame.vBat[0])[:6], True, white)
 	display.blit(text,(20, 200))
-	text = font.render("A", True, white)
-	display.blit(text,(60, 200))
-	text = font.render(str(evFrame.vMot[0])[:4], True, white)
-	display.blit(text,(250, 170))
 	text = font.render("V", True, white)
-	display.blit(text,(290, 170))
-	text = font.render(str(evFrame.iMot[0])[:4], True, white)
-	display.blit(text,(250, 200))
+	display.blit(text,(85, 200))
+	text = font.render(str(evFrame.iBat[0])[:6], True, white)
+	display.blit(text,(20, 230))
 	text = font.render("A", True, white)
-	display.blit(text,(290, 200))
-	
+	display.blit(text,(85, 230))
+	text = font.render(str(evFrame.vMot[0])[:6], True, white)
+	display.blit(text,(250, 200))
+	text = font.render("V", True, white)
+	display.blit(text,(315, 200))
+	text = font.render(str(evFrame.iMot[0])[:6], True, white)
+	display.blit(text,(250, 230))
+	text = font.render("A", True, white)
+	display.blit(text,(315, 230))
+	text = font.render("BATTERY CELL LEVELS", True, white)
+	display.blit(text,(150, 280))
 	#speeds
 	#render pack voltage levels
 	for x in range(0, 10): 		# create a column for each cell
-		battery_cell(bat_levels[x], cell_value[x], x*30 , 50) #pass the cell you want to render and its value.	
+		battery_cell(bat_levels[x], cell_value[x], x*50 , 50) #pass the cell you want to render and its value.	
 	
 	pygame.display.update()
 	return
@@ -398,18 +410,18 @@ def battery_cell(level, cell_val, locX, locY):
 	color = white
 	if level < 5:
 		color = red
-	elif cell_val>4:
+	elif cell_val>3.8:
 		colour = blue
 	else:
 		color = green
 	for L in range(0, level):
-		pygame.draw.rect(display, color, (locX+100,100+500-locY-L*30,bat_cell_height,bat_cell_height), 1)
+		pygame.draw.rect(display, color, (locX,450-locY-L*10,20,bat_cell_height), 1)
 	
 	temp_text = str(cell_val)
 	if len(temp_text)>3:
-		temp_text = temp_text[:-1] #strip the last character from the string
+		temp_text = temp_text#[:-1] #strip the last character from the string
 	text = font.render(temp_text, True, white)
-	display.blit(text,(locX // 1, 520-locY - text.get_height() // 1))
+	display.blit(text,(locX // 1, 500-locY - text.get_height() // 1))
 	return
 # ###################################################################################################################################	
 #Serial port functionality
@@ -449,7 +461,7 @@ while 1:
 		while bms_ser.inWaiting() !=0:
 			in_serial = bms_ser.readline()
 			if(in_serial == "cell voltages = \r\n"):
-				#print "Receiving cell voltages"
+				print "Receiving cell voltages"
 				in_serial = bms_ser.readline()# get stack voltages
 				
 				read_bat(in_serial, 1) #process the battery cell value readings place them in bat_levels variable
